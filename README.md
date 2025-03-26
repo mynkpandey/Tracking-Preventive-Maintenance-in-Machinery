@@ -42,9 +42,8 @@
    ```bash
    pip install -r requirements.txt
 
-3. **Dataset Setup**:  
+3. **Example Dataset Setup**:  
    Download ```ai4i2020.csv``` from [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset)  
-   Place in project root directory
 
 ---
 
@@ -81,7 +80,8 @@ python project.py
 Tracking-Preventive-Maintenance-in-Machinery/  
 ├── app.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Streamlit web application  
 ├── .gitignore&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Files to ignore  
-├── ai4i2020.csv&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Machinary Dataset  
+├── ai4i2020.csv&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Example Dataset  
+├── CSVrequirements.txt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Requirements for other similar Datasets  
 ├── project.py&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# CLI interface  
 ├── requirements.txt&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# Dependency list  
 ├── LICENSE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# GNU GPLv3 License  
@@ -91,7 +91,7 @@ Tracking-Preventive-Maintenance-in-Machinery/
 Distributed under ***GNU General Public License v3.0***. See **LICENSE** for full text.  
 
 # 🔗 Resources  
-**Dataset**: [AI4I 2020 Predictive Maintenance Dataset](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset)  
+**Example Dataset**: [AI4I 2020 Predictive Maintenance Dataset](https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset)  
 **Issue Tracker**: [GitHub Issues](https://github.com/mynkpandey/Tracking-Preventive-Maintenance-in-Machinery/issues)  
 
 ---
