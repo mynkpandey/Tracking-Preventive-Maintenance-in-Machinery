@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 **Predictive Maintenance System** with dual interfaces:  
-① **Web App** for visual analytics  |  ② **CLI Tool** for terminal-based analysis
+① **Web App** for visual analytics  |  ② **CLI Tool** for terminal-based analysis for example dataset
 
 [![Open in GitHub](https://img.shields.io/badge/View%20on-GitHub-181717?logo=github)](https://github.com/mynkpandey/Tracking-Preventive-Maintenance-in-Machinery)
 
