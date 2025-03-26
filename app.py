@@ -19,32 +19,86 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 # Configuration
 MAINTENANCE_THRESHOLD = 0.25
 
+def validate_data(df):
+    """Validate uploaded CSV structure with comprehensive checks"""
+    required_base_columns = {
+        'Type', 'Air temperature [K]', 'Process temperature [K]',
+        'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]'
+    }
+    
+    missing_columns = required_base_columns - set(df.columns)
+    if missing_columns:
+        st.error(f"Missing required columns: {', '.join(missing_columns)}")
+        st.stop()
+        
+    # Check for at least one failure column if present
+    failure_columns = ['Machine failure', 'TWF', 'HDF', 'PWF', 'OSF', 'RNF']
+    has_failure_data = any(col in df.columns for col in failure_columns)
+    
+    return has_failure_data
+
 @st.cache_data
-def load_and_preprocess(file_path='ai4i2020.csv'):
-    """Load and preprocess the data"""
-    df = pd.read_csv(file_path)
-    failure_cols = ['Machine failure', 'TWF', 'HDF', 'PWF', 'OSF', 'RNF']
-    df['failure'] = df[failure_cols].any(axis=1).astype(int)
-    df['temp_diff'] = df['Process temperature [K]'] - df['Air temperature [K]']
-    df['power'] = df['Torque [Nm]'] * df['Rotational speed [rpm]'] / 9.5488
-    df['stress_factor'] = df['Tool wear [min]'] * df['Rotational speed [rpm]']
-    return df
+def load_and_preprocess(uploaded_file):
+    """Load and preprocess data with robust error handling"""
+    try:
+        df = pd.read_csv(uploaded_file)
+        has_failure_data = validate_data(df)
+        
+        # Create engineered features safely
+        try:
+            df['temp_diff'] = df['Process temperature [K]'] - df['Air temperature [K]']
+        except KeyError:
+            st.error("Missing temperature columns for feature engineering")
+            st.stop()
+            
+        try:
+            df['power'] = df['Torque [Nm]'] * df['Rotational speed [rpm]'] / 9.5488
+        except KeyError:
+            st.error("Missing torque or rotation columns for power calculation")
+            st.stop()
+            
+        try:
+            df['stress_factor'] = df['Tool wear [min]'] * df['Rotational speed [rpm]']
+        except KeyError:
+            st.error("Missing tool wear or rotation columns for stress factor")
+            st.stop()
+
+        # Generate Product ID if missing
+        if 'Product ID' not in df.columns:
+            df['Product ID'] = [f"ID_{i+1:04d}" for i in range(len(df))]
+            
+        # Create failure target if available
+        if has_failure_data:
+            failure_cols = [col for col in ['Machine failure', 'TWF', 'HDF', 'PWF', 'OSF', 'RNF'] 
+                          if col in df.columns]
+            df['failure'] = df[failure_cols].any(axis=1).astype(int)
+            
+        return df
+    except Exception as e:
+        st.error(f"Error processing file: {str(e)}")
+        st.stop()
 
 @st.cache_resource
-def build_model():
-    """Build the predictive maintenance pipeline"""
-    numeric_features = [
+def build_model(_df):
+    """Build dynamic pipeline based on available columns"""
+    # Base features that must exist after preprocessing
+    guaranteed_features = [
         'Air temperature [K]', 'Process temperature [K]',
         'Rotational speed [rpm]', 'Torque [Nm]',
         'Tool wear [min]', 'temp_diff', 'power', 'stress_factor'
     ]
-    categorical_features = ['Type']
+    
+    # Filter to only existing columns
+    numeric_features = [col for col in guaranteed_features if col in _df.columns]
+    categorical_features = ['Type'] if 'Type' in _df.columns else []
 
     preprocessor = ColumnTransformer(
         transformers=[
             ('num', StandardScaler(), numeric_features),
             ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features)
-        ])
+        ],
+        remainder='drop'  # Ignore unexpected columns
+    )
 
     model = Pipeline(steps=[
         ('preprocessor', preprocessor),
@@ -79,35 +133,26 @@ def generate_maintenance_schedule(df, probabilities):
 def show_shap_analysis(model, X_sample):
     """Display SHAP feature importance analysis"""
     try:
-        # Extract components from the pipeline
         preprocessor = model.named_steps['preprocessor']
         classifier = model.named_steps['classifier']
         
-        # Transform features using the preprocessor
         X_sample_transformed = preprocessor.transform(X_sample)
         feature_names = preprocessor.get_feature_names_out()
         
-        # Use TreeExplainer on the classifier
         explainer = shap.TreeExplainer(classifier)
         shap_values = explainer.shap_values(X_sample_transformed)
         
-        # Handle different SHAP output formats
         if isinstance(shap_values, list):
-            # Binary classification case
             shap_values_class1 = shap_values[1]
         elif len(shap_values.shape) == 3:
-            # Multi-class format array
             shap_values_class1 = shap_values[:, :, 1]
         else:
-            # Single array format
             shap_values_class1 = shap_values
         
-        # Validate shapes
         if shap_values_class1.shape != X_sample_transformed.shape:
             st.error(f"Shape mismatch: SHAP values {shap_values_class1.shape} vs Data {X_sample_transformed.shape}")
             return
         
-        # Create summary plot
         fig, ax = plt.subplots(figsize=(10, 6))
         shap.summary_plot(shap_values_class1,
                          X_sample_transformed,
@@ -120,66 +165,85 @@ def show_shap_analysis(model, X_sample):
         st.error(f"Error generating SHAP plot: {str(e)}")
 
 def main():
-    # Page configuration
     st.set_page_config(
-        page_title="Smart Maintenance Predictor",
+        page_title="Predictive Maintenance Analyzer",
         page_icon="🔧",
         layout="wide"
     )
 
-    # App title and description
-    st.title("🔧 Predictive Maintenance App")
-    st.markdown("A tool for predicting machine failures, scheduling maintenance, and analyzing equipment health.")
+    st.title("🔧 CSV-based Predictive Maintenance Analyzer")
+    
+    # File upload section
+    uploaded_file = st.file_uploader("Upload equipment data (CSV)", type="csv")
+    
+    if uploaded_file is None:
+        st.info("Please upload a CSV file to get started")
+        st.stop()
 
-    # Load data and model
-    df = load_and_preprocess()
-    model = build_model()
+    # Load and process data
+    with st.spinner("Analyzing your data..."):
+        df = load_and_preprocess(uploaded_file)
+        model = build_model(df)
 
-    # Train model
-    failure_cols = ['Machine failure', 'TWF', 'HDF', 'PWF', 'OSF', 'RNF']
-    X = df.drop(columns=failure_cols + ['failure', 'UDI', 'Product ID'])
-    y = df['failure']
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
-    model.fit(X_train, y_train)
-    probabilities = model.predict_proba(X)[:, 1]
-    maintenance_schedule = generate_maintenance_schedule(df, probabilities)
+        # Handle target variable
+        if 'failure' in df.columns:
+            y = df['failure']
+            has_real_data = True
+        else:
+            st.warning("No failure data found - using synthetic labels for demonstration")
+            y = pd.Series(np.random.randint(0, 2, size=len(df)))
+            has_real_data = False
+
+        # Prepare features dynamically
+        feature_cols = [
+            'Type', 'Air temperature [K]', 'Process temperature [K]',
+            'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]',
+            'temp_diff', 'power', 'stress_factor'
+        ]
+        X = df[[col for col in feature_cols if col in df.columns]]
+        
+        # Train model with enhanced validation
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, stratify=y if len(y.unique()) > 1 else None, random_state=42
+            )
+            model.fit(X_train, y_train)
+            probabilities = model.predict_proba(X)[:, 1]
+            maintenance_schedule = generate_maintenance_schedule(df, probabilities)
+        except ValueError as e:
+            st.error(f"Model training failed: {str(e)}")
+            st.stop()
 
     # Navigation sidebar
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", [
-        "Dashboard",
-        "Machine Check",
+    st.sidebar.title("Analysis Options")
+    page = st.sidebar.radio("Select View", [
+        "Data Overview",
+        "Machine Health Check",
         "Maintenance Schedule",
-        "Model Analysis"
+        "Model Insights"
     ])
 
-    # Dashboard Page
-    if page == "Dashboard":
-        st.header("📊 Dataset Insights")
+    if page == "Data Overview":
+        st.header("📊 Data Summary")
+        st.write("**First 5 rows:**")
+        st.dataframe(df.head(), use_container_width=True)
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Machines", len(df))
-            st.metric("Total Failures", f"{df['failure'].sum()} ({df['failure'].mean():.1%})")
+            st.write("**Basic Statistics**")
+            st.write(df.describe())
         
         with col2:
-            failure_types = df[['TWF', 'HDF', 'PWF', 'OSF', 'RNF']].sum()
-            st.bar_chart(failure_types)
+            st.write("**Data Health Check**")
+            st.write(pd.DataFrame({
+                'Missing Values': df.isna().sum(),
+                'Unique Values': df.nunique()
+            }))
 
-        # Interactive histogram
-        df['Failure Status'] = df['failure'].map({0: 'No Failure', 1: 'Failure'})
-        fig = px.histogram(df, x='Rotational speed [rpm]', color='Failure Status',
-                          marginal="box", title="Rotational Speed Distribution by Failure Status")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Machine Check Page
-    elif page == "Machine Check":
-        st.header("🔍 Machine Status Check")
-        
+    elif page == "Machine Health Check":
+        st.header("🔍 Machine Health Checker")
         product_ids = df['Product ID'].unique().tolist()
-        product_id = st.selectbox("Select Product ID", product_ids)
+        product_id = st.selectbox("Select Equipment ID", product_ids)
         
         machine_data = df[df['Product ID'] == product_id]
         maintenance_info = maintenance_schedule[maintenance_schedule['Product ID'] == product_id]
@@ -190,93 +254,65 @@ def main():
 
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("Maintenance Report")
+                st.subheader("Maintenance Recommendation")
                 st.metric("Failure Probability", f"{record['Failure Probability']:.1%}")
                 st.metric("Criticality Level", record['Criticality Level'])
-                st.write(f"**Recommended Action:** {record['Recommended Maintenance']}")
+                st.write(f"**Action Required:** {record['Recommended Maintenance']}")
 
-                # Visual risk gauge
                 prob = record['Failure Probability']
                 gauge = '🟥' * int(prob * 10) + '⬜' * (10 - int(prob * 10))
-                st.write(f"**Risk Gauge:** {gauge} {prob:.0%}")
+                st.write(f"**Risk Indicator:** {gauge} {prob:.0%}")
 
             with col2:
-                st.subheader("Machine Parameters")
-                st.write(f"**Type:** {machine_stats['Type']}")
-                st.write(f"**Tool Wear:** {machine_stats['Tool wear [min]']} mins")
-                st.write(f"**Rotational Speed:** {machine_stats['Rotational speed [rpm]']} RPM")
-                st.write(f"**Temperature Difference:** {machine_stats['temp_diff']:.1f}°K")
+                st.subheader("Equipment Parameters")
+                params = {
+                    'Type': machine_stats.get('Type', 'N/A'),
+                    'Tool Wear': f"{machine_stats.get('Tool wear [min]', 'N/A')} mins",
+                    'Rotational Speed': f"{machine_stats.get('Rotational speed [rpm]', 'N/A')} RPM",
+                    'Temperature Diff': f"{machine_stats.get('temp_diff', 'N/A'):.1f}°K"
+                }
+                for k, v in params.items():
+                    st.write(f"**{k}:** {v}")
 
-            # Similar machines section
-            similar = maintenance_schedule[
-                (maintenance_schedule['Criticality Level'] == record['Criticality Level']) &
-                (maintenance_schedule['Product ID'] != product_id)
-            ].head(3)
-            if not similar.empty:
-                st.subheader("Similar Machines Needing Attention")
-                st.dataframe(similar[['Product ID', 'Failure Probability']], use_container_width=True)
-        else:
-            st.warning(f"No records found for Product ID: {product_id}")
-
-    # Maintenance Schedule Page
     elif page == "Maintenance Schedule":
         st.header("📅 Maintenance Priorities")
+        critical_filter = st.multiselect(
+            "Filter by Criticality Level",
+            options=['Critical', 'High', 'Medium', 'Low'],
+            default=['Critical', 'High']
+        )
         
-        criticality_levels = maintenance_schedule['Criticality Level'].unique().tolist()
-        selected_levels = st.multiselect("Filter by Criticality Level", criticality_levels, default=criticality_levels)
+        filtered = maintenance_schedule[maintenance_schedule['Criticality Level'].isin(critical_filter)]
+        st.dataframe(filtered, use_container_width=True)
         
-        filtered = maintenance_schedule[maintenance_schedule['Criticality Level'].isin(selected_levels)]
-        
-        if filtered.empty:
-            st.info("No machines match the selected criticality levels.")
-        else:
-            st.dataframe(filtered, use_container_width=True)
-
         st.download_button(
-            label="Export to CSV",
+            "Export Schedule",
             data=filtered.to_csv(index=False).encode('utf-8'),
             file_name='maintenance_schedule.csv',
             mime='text/csv'
         )
 
-    # Model Analysis Page
-    elif page == "Model Analysis":
+    elif page == "Model Insights":
         st.header("📈 Model Performance Analysis")
         
-        y_pred = model.predict(X_test)
+        if has_real_data:
+            with st.expander("Classification Report"):
+                y_pred = model.predict(X_test)
+                st.write(classification_report(y_test, y_pred, output_dict=True))
+            
+            with st.expander("Confusion Matrix"):
+                cm = confusion_matrix(y_test, y_pred)
+                fig = px.imshow(cm, text_auto=True,
+                               labels=dict(x="Predicted", y="Actual"),
+                               title="Confusion Matrix")
+                st.plotly_chart(fig, use_container_width=True)
         
-        with st.expander("Classification Report", expanded=True):
-            report = classification_report(y_test, y_pred, output_dict=True)
-            report_df = pd.DataFrame(report).transpose()
-            st.dataframe(report_df)
-            st.markdown("""
-            - **Precision:** Proportion of true positives among predicted positives
-            - **Recall:** Proportion of true positives among actual positives
-            - **F1-Score:** Harmonic mean of precision and recall
-            """)
-
-        with st.expander("Feature Importance Analysis", expanded=True):
-            with st.spinner("Generating SHAP explanations..."):
-                try:
-                    X_sample = X_test.sample(100, random_state=42)
-                    show_shap_analysis(model, X_sample)
-                except Exception as e:
-                    st.error(f"Feature importance analysis failed: {str(e)}")
-
-        with st.expander("Confusion Matrix", expanded=True):
-            cm = confusion_matrix(y_test, y_pred)
-            fig = px.imshow(cm, text_auto=True,
-                          labels=dict(x="Predicted", y="Actual"),
-                          x=['No Failure', 'Failure'],
-                          y=['No Failure', 'Failure'],
-                          title="Confusion Matrix")
-            st.plotly_chart(fig, use_container_width=True)
-            st.markdown("""
-            - **True Positives (TP):** Correct failure predictions
-            - **True Negatives (TN):** Correct non-failure predictions
-            - **False Positives (FP):** Incorrect failure predictions
-            - **False Negatives (FN):** Missed failures
-            """)
+        with st.expander("Feature Importance"):
+            try:
+                X_sample = X.sample(100, random_state=42)
+                show_shap_analysis(model, X_sample)
+            except Exception as e:
+                st.error(f"Couldn't generate feature importance: {str(e)}")
 
 if __name__ == '__main__':
     main()
