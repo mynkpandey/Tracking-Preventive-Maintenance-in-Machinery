@@ -1,0 +1,6 @@
+# CSV must contain these base columns:
+Type, Air temperature [K], Process temperature [K], 
+Rotational speed [rpm], Torque [Nm], Tool wear [min]
+
+# Can optionally include failure columns:
+Machine failure, TWF, HDF, PWF, OSF, RNF
